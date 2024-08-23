@@ -55,6 +55,8 @@ class ZkClientManager : boost::noncopyable {
                           SessionExpiredHandler expired_handler = nullptr,
                           void* context = nullptr);
 
+  void destroyClient(uint32_t handle);
+
   private:
   void init();
   void LoopFunc();

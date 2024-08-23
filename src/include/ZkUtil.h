@@ -3,8 +3,6 @@
 #include <poll.h>
 #include <sys/epoll.h>
 #include <memory>
-#include "callback.h"
-#include "ZkNetClient.h"
 
 namespace zkclient {
 namespace zkutil {
@@ -25,20 +23,6 @@ int setNonBlock(int fd, bool value);
 bool isReadEvent(int events);
 bool isWriteEvent(int events);
 
-void modifyEpollEvent(int operation, int epollfd, ZkNetClient* pClient,
-                      std::string printStr);
-
-void addEpollFd(int epollfd, ZkNetClient* pClient);
-
-void modEpollFd(int epollfd, ZkNetClient* pClient);
-
-void delEpollFd(int epollfd, ZkNetClient* pClient);
-
-void enableReading(ZkNetClient* pClient);
-void enableWriting(ZkNetClient* pClient);
-void disableWriting(ZkNetClient* pClient);
-void disableAll(ZkNetClient* pClient);
-
 int getSocketError(int sockfd);
 
 int createEventfd();
@@ -47,9 +31,6 @@ int createEventfd();
 const int32_t kInvalidDataVersion = -1;
 const int kMaxNodeValueLength = 32 * 1024;
 const int kMaxPathLength = 512;
-
-using SessionExpiredHandler =
-    std::function<void(const ZkClientPtr& client, void* context)>;
 
 enum ZkErrorCode {
   kZKSucceed = 0,    // 操作成功,或者 结点存在
@@ -60,6 +41,20 @@ enum ZkErrorCode {
   kZKNotEmpty,       // 节点含有子节点
   kZKLostConnection  //与zookeeper server断开连接
 };
+
+// Watcher的回调原型
+enum ZkNotifyType {
+  kNodeDelete = 0,                   // 节点删除
+  kNodeCreate,                       // 节点创建
+  kNodeChange,                       // 节点的数据变更
+  kGetNodeValueFailed_NodeNotExist,  //节点创建 或 数据变更时，再向zookeeper server获取最新数据时 结点已被删除
+  kGetNodeValueFailed,  //节点创建 或 数据变更时，再向zookeeper server获取最新数据时 失败
+  kChildChange,         // 子节点的变更（增加、删除子节点）
+  kGetChildListFailed_ParentNotExist,  //子节点的变更时，再向zookeeper server获取最新子节点列表时 父结点已被删除
+  kGetChildListFailed,  //子节点的变更时，再向zookeeper server获取最新子节点列表时 失败
+  kTypeError,           //其它错误
+};
+
 }  // namespace zkutil
 
 }  // namespace zkclient

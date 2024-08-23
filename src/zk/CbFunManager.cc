@@ -3,6 +3,8 @@
 
 #include "muduo/base/Singleton.h"
 
+#include "muduo/base/Logging.h"
+
 #include <memory>
 
 namespace zkclient {

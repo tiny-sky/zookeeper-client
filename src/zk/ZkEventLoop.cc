@@ -10,7 +10,6 @@
 #include "muduo/base/CurrentThread.h"
 #include "muduo/base/Logging.h"
 
-#include "CbFunManager.h"
 #include "ZkEventLoop.h"
 #include "ZkTimerQueue.h"
 

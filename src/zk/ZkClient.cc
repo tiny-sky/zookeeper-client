@@ -4,16 +4,23 @@
 #include <string>
 #include "ZkClientManager.h"
 #include "ZkEventLoop.h"
-#include "ZkNetClient.h"
 #include "ZkUtil.h"
 #include "callback.h"
+
+#include <zookeeper/zookeeper.h>
+#include <zookeeper/zookeeper.jute.h>
 
 #include "muduo/base/Logging.h"
 
 namespace zkclient {
 
-void ZkConnChannel::update(ZkNetClient* client) {
-  zkutil::modEpollFd(epollfd_, client);
+
+ZkOperateAndWatchContext::ZkOperateAndWatchContext(const std::string& path,
+                                                   void* context,
+                                                   ZkClientPtr zkclient) {
+  this->path_ = path;
+  this->context_ = context;
+  this->zkclient_ = zkclient;
 }
 
 void ZkClient::sessionWatcher(zhandle_t* zh, int type, int state,
@@ -305,6 +312,368 @@ std::string ZkClient::getSessStatStr(int stat) {
   } else {
     return "";
   }
+}
+
+bool ZkClient::getClientId(SessionClientId& cliId) {
+  if (isConnected() == true) {
+    const SessionClientId* pClientId =
+        reinterpret_cast<const SessionClientId*>(zoo_client_id(zhandle_));
+    if (pClientId != nullptr) {
+      cliId.client_id = pClientId->client_id;
+      strncpy(cliId.passwd, pClientId->passwd, sizeof(pClientId->passwd));
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ZkClient::create(const std::string& path, const std::string& value,
+                      CreateHandler handler, void* context,
+                      bool isTemp /*= false*/, bool isSequence /*= false*/) {
+  if (handler == nullptr) {
+    return false;
+  }
+  if (isConnected() == false) {
+    return false;
+  }
+
+  ZkOperateAndWatchContext* watch_ctx =
+      new ZkOperateAndWatchContext(path, context, shared_from_this());
+  watch_ctx->create_handler_ = handler;
+
+  int flags = 0;
+  if (isTemp == true) {
+    flags |= ZOO_EPHEMERAL;
+  }
+  if (isSequence == true) {
+    flags |= ZOO_SEQUENCE;
+  }
+  int rc =
+      zoo_acreate(zhandle_, path.c_str(), value.c_str(), value.size(),
+                  &ZOO_OPEN_ACL_UNSAFE, flags, createCompletion, watch_ctx);
+  LOG_DEBUG << "[ZkClient::Create] zoo_acreate path:" << path
+            << ", value:" << value << ", isTemp:" << isTemp
+            << ", isSeq:" << isSequence << ", session Handle:" << handle_;
+  return rc == ZOK ? true : false;
+}
+
+void ZkClient::createCompletion(int rc, const char* value, const void* data) {
+  assert(rc == ZOK || rc == ZNODEEXISTS || rc == ZCONNECTIONLOSS ||
+         rc == ZOPERATIONTIMEOUT || rc == ZNOAUTH || rc == ZNONODE ||
+         rc == ZNOCHILDRENFOREPHEMERALS || rc == ZCLOSING);
+  assert(data != NULL);
+
+  const ZkOperateAndWatchContext* watch_ctx =
+      (const ZkOperateAndWatchContext*)data;
+  assert(watch_ctx->zkclient_);
+
+  LOG_DEBUG << "[ZkClient::CreateCompletion] rc:" << rc
+            << ", create path:" << watch_ctx->path_
+            << ", session Handle:" << watch_ctx->zkclient_->getHandle();
+
+  if (rc == ZOK) {
+    if (watch_ctx->create_handler_) {
+      watch_ctx->create_handler_(zkutil::kZKSucceed, watch_ctx->zkclient_,
+                                 watch_ctx->path_, value, watch_ctx->context_);
+    }
+  } else if (rc == ZNONODE) {
+    if (watch_ctx->create_handler_) {
+      //子路径不存在
+      watch_ctx->create_handler_(zkutil::kZKNotExist, watch_ctx->zkclient_,
+                                 watch_ctx->path_, "", watch_ctx->context_);
+    }
+  } else if (rc == ZNODEEXISTS) {
+    if (watch_ctx->create_handler_) {
+      watch_ctx->create_handler_(zkutil::kZKExisted, watch_ctx->zkclient_,
+                                 watch_ctx->path_, "", watch_ctx->context_);
+    }
+  } else {
+    if (watch_ctx->create_handler_) {
+      watch_ctx->create_handler_(zkutil::kZKError, watch_ctx->zkclient_,
+                                 watch_ctx->path_, "", watch_ctx->context_);
+    }
+  }
+  delete watch_ctx;
+  watch_ctx = NULL;
+}
+
+zkutil::ZkErrorCode ZkClient::getNode(const std::string& path,
+                                      std::string& value, int32_t& version) {
+  if (isConnected() == false) {
+    return zkutil::kZKLostConnection;
+  }
+
+  int isWatch = 0;
+  struct Stat stat;
+  char buffer[zkutil::kMaxNodeValueLength] = {0};
+  int buffer_len = sizeof(buffer);
+
+  int rc = zoo_get(zhandle_, path.c_str(), isWatch, buffer, &buffer_len, &stat);
+  LOG_DEBUG << "[ZkClient::GetNode] zoo_get path:" << path
+            << ", version:" << version << ", rc:" << rc
+            << ", session Handle:" << handle_;
+  if (rc == ZOK) {
+    if (buffer_len != -1) {
+      value.assign(buffer, buffer_len);
+    } else {
+      value = "";
+    }
+    version = stat.version;
+    return zkutil::kZKSucceed;
+  } else if (rc == ZNONODE) {
+    return zkutil::kZKNotExist;
+  } else {
+    return zkutil::kZKError;
+  }
+}
+
+zkutil::ZkErrorCode ZkClient::getChildren(
+    const std::string& path, std::vector<std::string>& childNodes) {
+  if (isConnected() == false) {
+    return zkutil::kZKLostConnection;
+  }
+
+  int isWatch = 0;
+  struct String_vector strings = {0, NULL};
+  int rc = zoo_get_children(zhandle_, path.c_str(), isWatch, &strings);
+  LOG_DEBUG << "[ZkClient::GetChildren] zoo_get_children path:" << path
+            << ", rc:" << rc << ", session Handle:" << handle_;
+  if (rc == ZOK) {
+    for (int i = 0; i < strings.count; ++i) {
+      childNodes.push_back(strings.data[i]);
+    }
+    deallocate_String_vector(&strings);
+    return zkutil::kZKSucceed;
+  } else if (rc == ZNONODE) {
+    return zkutil::kZKNotExist;
+  }
+  return zkutil::kZKError;
+}
+
+zkutil::ZkErrorCode ZkClient::isExist(const std::string& path) {
+  if (isConnected() == false) {
+    return zkutil::kZKLostConnection;
+  }
+
+  int isWatch = 0;
+  int rc = zoo_exists(zhandle_, path.c_str(), isWatch, NULL);
+  LOG_DEBUG << "[ZkClient::IsExist] zoo_exists path:" << path << ", rc:" << rc
+            << ", session Handle:" << handle_;
+  if (rc == ZOK) {
+    return zkutil::kZKSucceed;
+  } else if (rc == ZNONODE) {
+    return zkutil::kZKNotExist;
+  }
+  return zkutil::kZKError;
+}
+
+//阻塞式 创建目录结点
+bool ZkClient::createPersistentDir(const std::string& path) {
+  LOG_DEBUG << "[ZkClient::CreatePersistentDir] path:" << path
+            << ", session Handle:" << handle_;
+  //先尝试创建 外层的 目录结点
+  zkutil::ZkErrorCode ec = createPersistentDirNode(path);
+  if (ec == zkutil::kZKSucceed || ec == zkutil::kZKExisted) {
+    return true;
+  } else if (
+      ec ==
+      zkutil::
+          kZKNotExist)  //如果失败，则先尝试 创建里层的 目录结点，然后创建 外层的目录结点
+  {
+    string::size_type pos = path.rfind('/');
+    if (pos == string::npos) {
+      LOG_ERROR << "[ZkClient::CreatePersistentDir] Can't find / character, "
+                   "create dir failed! path:"
+                << path << ", session Handle:" << handle_;
+      return false;
+    } else {
+      std::string parentDir = path.substr(0, pos);
+      if (createPersistentDir(parentDir) == true)  //创建父目录成功
+      {
+        return createPersistentDir(path);
+      } else {
+        LOG_ERROR
+            << "[ZkClient::CreatePersistentDir] create parent dir failed! dir:"
+            << parentDir << ", session Handle:" << handle_;
+        return false;
+      }
+    }
+  } else  //zkutil::kZKError
+  {
+    LOG_ERROR << "[ZkClient::CreatePersistentDir] CreatePersistentDirNode "
+                 "failed! path:"
+              << path << ", session Handle:" << handle_;
+    return false;
+  }
+}
+
+zkutil::ZkErrorCode ZkClient::createPersistentDirNode(const std::string& path) {
+  if (isConnected() == false) {
+    return zkutil::kZKLostConnection;
+  }
+
+  int flags = 0;  //分支路径的结点 默认是 持久型、非顺序型
+  int rc = zoo_create(zhandle_, path.c_str(), NULL, -1, &ZOO_OPEN_ACL_UNSAFE,
+                      flags, NULL, 0);
+  LOG_DEBUG << "[ZkClient::CreatePersistentDirNode] handle: " << handle_
+            << "path:" << path << "rc:" << rc << ", session Handle:" << handle_;
+  if (rc == ZOK) {
+    return zkutil::kZKSucceed;
+  } else if (rc == ZNONODE) {
+    return zkutil::kZKNotExist;
+  } else if (rc == ZNODEEXISTS) {
+    return zkutil::kZKExisted;
+  }
+  return zkutil::kZKError;
+}
+
+zkutil::ZkErrorCode ZkClient::createIfNeedCreateParents(
+    const std::string& path, const std::string& value, bool isTemp /*= false*/,
+    bool isSequence /*= false*/, std::string& retPath) {
+  zkutil::ZkErrorCode ec = create(path, value, isTemp, isSequence, retPath);
+  LOG_DEBUG << "ZkClient::CreateIfNeedCreateParents Create path:" << path
+            << ", value:" << value << ", isTemp" << isTemp
+            << ", isSeq:" << isSequence << ", ec:" << ec
+            << ", session Handle:" << handle_;
+  if (ec == zkutil::kZKNotExist)  //分支结点不存在
+  {
+    string::size_type pos = path.rfind('/');
+    if (pos == string::npos) {
+      LOG_ERROR << "[ZkClient::CreateIfNeedCreateParents] Can't find / "
+                   "character, create node failed! path:"
+                << path << ", session Handle:" << handle_;
+      return zkutil::kZKError;
+    } else {
+      std::string parentDir = path.substr(0, pos);
+      //递归创建 所有 父目录结点
+      if (createPersistentDir(parentDir) == true) {
+        //创建叶子结点
+        return create(path, value, isTemp, isSequence, retPath);
+      } else {
+        LOG_ERROR
+            << "[ZkClient::CreateIfNeedCreateParents] create dir failed! dir:"
+            << parentDir << ", path:" << path << ", session Handle:" << handle_;
+        return zkutil::kZKError;
+      }
+    }
+  } else {
+    return ec;
+  }
+}
+
+zkutil::ZkErrorCode ZkClient::set(const std::string& path,
+                                  const std::string& value,
+                                  int32_t version /*= -1*/) {
+  if (isConnected() == false) {
+    return zkutil::kZKLostConnection;
+  }
+
+  int rc =
+      zoo_set(zhandle_, path.c_str(), value.c_str(), value.size(), version);
+  LOG_DEBUG << "[ZkClient::Set] zoo_set path:" << path << ", value:" << value
+            << ", version:" << version << ", rc:" << rc
+            << ", session Handle:" << handle_;
+  if (rc == ZOK) {
+    return zkutil::kZKSucceed;
+  } else if (rc == ZNONODE) {
+    return zkutil::kZKNotExist;
+  }
+  return zkutil::kZKError;
+}
+
+zkutil::ZkErrorCode ZkClient::deleteNode(const std::string& path,
+                                         int32_t version /*= -1*/) {
+  if (isConnected() == false) {
+    return zkutil::kZKLostConnection;
+  }
+
+  int rc = zoo_delete(zhandle_, path.c_str(), version);
+  LOG_DEBUG << "[ZkClient::Delete] zoo_delete path:" << path
+            << ", version:" << version << ", rc:" << rc
+            << ", session Handle:" << handle_;
+  if (rc == ZOK) {
+    return zkutil::kZKSucceed;
+  } else if (rc == ZNONODE) {
+    return zkutil::kZKNotExist;
+  } else if (rc == ZNOTEMPTY) {
+    return zkutil::kZKNotEmpty;
+  }
+  return zkutil::kZKError;
+}
+
+/*
+ * return:
+ *      kZKSucceed: 删除成功
+ *      kZKNotExist: 结点已不存在
+ *      kZKError: 操作时出现错误
+ */
+zkutil::ZkErrorCode ZkClient::deleteRecursive(const std::string& path,
+                                              int32_t version /*= -1*/) {
+  //获取child 结点
+  std::vector<std::string> childNodes;
+  childNodes.clear();
+  zkutil::ZkErrorCode ec = getChildren(path, childNodes);
+  if (ec == zkutil::kZKNotExist) {
+    return zkutil::kZKSucceed;
+  } else if (ec != zkutil::kZKSucceed) {
+    LOG_ERROR << "[ZkClient::DeleteRecursive] GetChildren failed! ec:" << ec
+              << ", path:" << path << ", version:" << version
+              << ", session Handle:" << handle_;
+    return zkutil::kZKError;
+  } else  //zkutil::kZKSucceed
+  {
+    //删除 child 结点
+    std::vector<std::string>::iterator iter = childNodes.begin();
+    for (; iter != childNodes.end(); iter++) {
+      std::string childPath = path + "/" + (*iter);
+      zkutil::ZkErrorCode ec1 =
+          deleteRecursive(childPath, -1);  //删除子结点 用 最近的version
+
+      if (ec1 != zkutil::kZKSucceed && ec1 != zkutil::kZKNotExist) {
+        LOG_ERROR << "[ZkClient::DeleteRecursive] GetChildren failed! ec:" << ec
+                  << ", path:" << path << ", version:" << version
+                  << ", session Handle:" << handle_;
+        return zkutil::kZKError;
+      }
+    }
+
+    //删除分支结点
+    return deleteNode(path, version);
+  }
+}
+
+zkutil::ZkErrorCode ZkClient::create(const std::string& path,
+                                     const std::string& value, bool isTemp,
+                                     bool isSequence, std::string& retPath) {
+  if (isConnected() == false) {
+    return zkutil::kZKLostConnection;
+  }
+
+  int flags = 0;
+  if (isTemp == true) {
+    flags |= ZOO_EPHEMERAL;
+  }
+  if (isSequence == true) {
+    flags |= ZOO_SEQUENCE;
+  }
+
+  char buffer[zkutil::kMaxPathLength] = {0};
+  int buffer_len = sizeof(buffer);
+  int rc = zoo_create(zhandle_, path.c_str(), value.c_str(), value.size(),
+                      &ZOO_OPEN_ACL_UNSAFE, flags, buffer, buffer_len);
+  LOG_DEBUG << "[ZkClient::Create] zoo_create path:" << path
+            << ", value:" << value << ", isTemp:" << isTemp
+            << ", isSeq:" << isSequence << ", rc:" << rc
+            << ", session Handle:" << handle_;
+  if (rc == ZOK) {
+    retPath.assign(buffer);
+    return zkutil::kZKSucceed;
+  } else if (rc == ZNONODE) {
+    return zkutil::kZKNotExist;
+  } else if (rc == ZNODEEXISTS) {
+    return zkutil::kZKExisted;
+  }
+  return zkutil::kZKError;
 }
 
 }  // namespace zkclient

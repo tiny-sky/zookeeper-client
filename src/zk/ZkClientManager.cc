@@ -1,5 +1,4 @@
 #include "ZkClientManager.h"
-#include "CbFunManager.h"
 #include "ZkClient.h"
 #include "ZkUtil.h"
 
@@ -123,6 +122,16 @@ uint32_t ZkClientManager::createZkClient(
 
   LOG_INFO << "zkclient init...";
   return nextHandle_;
+}
+
+void ZkClientManager::destroyClient(uint32_t handle) {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  if (totalZkClients_.find(handle) != totalZkClients_.end()) {
+    totalZkClients_.erase(handle);
+  } else {
+    LOG_WARN << "Can't find this zkclient! handle:" << handle;
+  }
 }
 
 ZkClientPtr ZkClientManager::getZkClient(uint32_t handle) {
