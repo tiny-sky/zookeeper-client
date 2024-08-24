@@ -72,7 +72,7 @@ void ZkChannel::handleEvent(Timestamp receiveTime) {
 }
 
 void ZkChannel::handleEventWithGuard(Timestamp receiveTime) {
-  LOG_INFO << fd_ << "channel handleEvent revents -> " << reventsToString();
+  LOG_DEBUG << fd_ << "channel handleEvent revents -> " << reventsToString();
 
   // shutdown 触发 EPOLLHUP 且无写数据
   if ((revents_ & EPOLLHUP) && !(revents_ & EPOLLIN)) {

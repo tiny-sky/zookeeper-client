@@ -9,8 +9,12 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <map>
+
+#include "ZkUtilClass.h"
 
 #include "muduo/base/noncopyable.h"
+#include "muduo/net/TimerId.h"
 
 namespace zkclient {
 
@@ -51,6 +55,8 @@ class ZkClient : muduo::noncopyable,
                  public std::enable_shared_from_this<ZkClient> {
   public:
   ZkClient(uint32_t handle);
+  ~ZkClient();
+
   bool init(const std::string& host, int timeout,
             SessionClientId* clientId = nullptr,
             SessionExpiredHandler expired_handler = nullptr,
@@ -71,6 +77,19 @@ class ZkClient : muduo::noncopyable,
   // session
   SessionExpiredHandler& getExpireHandler() { return expiredHandler_; };
 
+  // Watch
+  void getNodeWatchPaths(std::vector<std::string>& data);
+  void setNodeWatchData(const std::string& path, const NodeWatchData& data);
+  bool getNodeWatchData(const std::string& path,
+                        NodeWatchData& retNodeWatchData);
+  bool isShouldNotifyNodeWatch(const std::string& path);
+
+  void getChildWatchPaths(std::vector<std::string>& data);
+  void setChildWatchData(const std::string& path, const ChildWatchData& data);
+  bool getChildWatchData(const std::string& path,
+                         ChildWatchData& retChildWatchData);
+  bool isShouldNotifyChildWatch(const std::string& path);
+
   int getSessStat();
   void setSessStat(int stat);
 
@@ -88,6 +107,9 @@ class ZkClient : muduo::noncopyable,
 
   int64_t getSessDisconn();
   void setSessDisconn(int64_t disconn);
+
+  void autoRegNodeWatcher(std::string path);
+  void autoRegChildWatcher(std::string path);
 
   public:
   // 对外服务接口
@@ -139,12 +161,26 @@ class ZkClient : muduo::noncopyable,
   zkutil::ZkErrorCode deleteNode(const std::string& path, int32_t version = -1);
   zkutil::ZkErrorCode deleteRecursive(const std::string& path,
                                       int32_t version = -1);
+  void postDeleteRecursive(const ContextInDeleteRecursive* watch_ctx);
+
+  /* register watcher */
+  //默认用阻塞式api, 且触发watcher后，会自动再注册watcher.
+  //注册三种事件(节点删除，节点创建，节点数据变更)的watcher.
+  //注：当 path结点 不存在时，也可以注册成功.
+  bool regNodeWatcher(const std::string& path,
+                      NodeChangeHandler handler, void* context);
+  //子节点的变更（增加、删除子节点）事件的watcher.
+  //当 path结点 不存在时，会注册失败，所以注册前，需先创建 path 结点.
+  bool regChildWatcher(const std::string& path,
+                       ChildChangeHandler handler, void* context);
+
+  //取消 对path的watcher.
+  void cancelRegNodeWatcher(const std::string& path);
+  void cancelRegChildWatcher(const std::string& path);
 
   private:
   // current time
   int64_t getCurrentMs();
-
-  static void createCompletion(int rc, const char* value, const void* data);
 
   // session watch callback
   static void sessionWatcher(zhandle_t* zh, int type, int state,
@@ -152,12 +188,35 @@ class ZkClient : muduo::noncopyable,
   static void checkSessionState(uint32_t handle);
   static std::string getSessStatStr(int stat);
 
-  bool createPersistentDir(const std::string& path);
-  zkutil::ZkErrorCode createPersistentDirNode(const std::string& path);
+  //操作回调
+  static void getNodeDataCompletion(int rc, const char* value, int value_len,
+                                    const struct Stat* stat, const void* data);
+  static void getChildrenStringCompletion(int rc,
+                                          const struct String_vector* strings,
+                                          const void* data);
+  static void existCompletion(int rc, const struct Stat* stat,
+                              const void* data);
+  static void createCompletion(int rc, const char* value, const void* data);
+  static void setCompletion(int rc, const struct Stat* stat, const void* data);
+  static void deleteCompletion(int rc, const void* data);
+  static void existWatcher(zhandle_t* zh, int type, int state, const char* path,
+                           void* watcher_ctx);
+  static void getNodeDataOnWatcher(int rc, const char* value, int value_len,
+                                   const struct Stat* stat, const void* data);
+  static void getChildrenWatcher(zhandle_t* zh, int type, int state,
+                                 const char* path, void* watcher_ctx);
+  static void getChildDataOnWatcher(int rc, const struct String_vector* strings,
+                                    const void* data);
+  static void createIfNeedCreateParentsCompletion(int rc, const char* value,
+                                                  const void* data);
+  static void deleteRecursiveCompletion(int rc, const void* data);
 
   // Connection
   bool reconnect();
   static void retry(uint32_t handle);
+  bool createPersistentDir(const std::string& path);
+  zkutil::ZkErrorCode createPersistentDirNode(const std::string& path);
+  void postCreateParentAndNode(const ContextInCreateParentAndNodes* watch_ctx);
 
   uint32_t handle_;
 
@@ -187,5 +246,10 @@ class ZkClient : muduo::noncopyable,
   void* userContext_;
 
   SessionExpiredHandler expiredHandler_;
+
+  std::map<std::string, NodeWatchData> nodeWatchDatas_;  //map<path, watchdata>
+  std::mutex nodeWatchMutex_;
+  std::map<std::string, ChildWatchData> childWatchDatas_;  //map<path, watchdata>
+  std::mutex childWatchMutex_;
 };
 }  // namespace zkclient

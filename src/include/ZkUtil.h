@@ -18,12 +18,8 @@ const int kInitRetryDelay = 5;       //单位: 秒
 
 const char* strerror_tl(int savedErrno);
 
-int setNonBlock(int fd, bool value);
-
 bool isReadEvent(int events);
 bool isWriteEvent(int events);
-
-int getSocketError(int sockfd);
 
 int createEventfd();
 
@@ -54,7 +50,6 @@ enum ZkNotifyType {
   kGetChildListFailed,  //子节点的变更时，再向zookeeper server获取最新子节点列表时 失败
   kTypeError,           //其它错误
 };
-
 }  // namespace zkutil
 
 }  // namespace zkclient

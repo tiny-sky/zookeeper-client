@@ -23,7 +23,7 @@ namespace zkclient {
 
 muduo::AsyncLogging* gpAsyncLog = nullptr;
 
-static bool IsDebugLogLevel = true;
+static bool IsDebugLogLevel = false;
 static std::string ZkLogPath = "";
 static FILE* ZkLogFd = nullptr;
 
@@ -54,10 +54,10 @@ ZkClientManager::~ZkClientManager() {
 void ZkClientManager::init() {
 
   //初始化日志线程
-  gpAsyncLog = new muduo::AsyncLogging("zk_client", 50 * 1000 * 1000, 3);
-  muduo::Logger::setLogLevel(IsDebugLogLevel ? muduo::Logger::DEBUG
-                                             : muduo::Logger::WARN);
-  gpAsyncLog->start();
+  // gpAsyncLog = new muduo::AsyncLogging("zk_client", 50 * 1000 * 1000, 3);
+  // muduo::Logger::setLogLevel(IsDebugLogLevel ? muduo::Logger::DEBUG
+  //                                            : muduo::Logger::WARN);
+  // gpAsyncLog->start();
 
   /**
    * 创建 多个线程
@@ -120,7 +120,6 @@ uint32_t ZkClientManager::createZkClient(
     return 0;
   }
 
-  LOG_INFO << "zkclient init...";
   return nextHandle_;
 }
 
@@ -129,6 +128,7 @@ void ZkClientManager::destroyClient(uint32_t handle) {
 
   if (totalZkClients_.find(handle) != totalZkClients_.end()) {
     totalZkClients_.erase(handle);
+    
   } else {
     LOG_WARN << "Can't find this zkclient! handle:" << handle;
   }

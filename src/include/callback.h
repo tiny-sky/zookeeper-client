@@ -1,11 +1,13 @@
 #pragma once
 
 #include <functional>
+#include <boost/function.hpp>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "ZkUtil.h"
+
 
 namespace zkclient {
 
@@ -14,17 +16,18 @@ using ZkClientPtr = std::shared_ptr<ZkClient>;
 
 using SessionExpiredHandler =
     std::function<void(const ZkClientPtr& client, void* context)>;
-using TimerCallback = std::function<void()>;
+//using TimerCallback = std::function<void()>;
+using TimerCallback = boost::function<void()>;
 
-/* errcode 返回：
+    /* errcode 返回：
         kZKSucceed: 获取成功, value 结点的值，version 结点的版本号(之后可根据这个值，在delete,set时，进行CAS操作)
         kZKNotExist: 结点不存在, value 为空串，version 为kInvalidDataVersion
         kZKError: 其它错误, value 为空串，version 为kInvalidDataVersion
     */
-using GetNodeHandler =
-    std::function<void(zkutil::ZkErrorCode errcode, const ZkClientPtr& client,
-                       const std::string& path, const std::string& value,
-                       int32_t version, void* context)>;
+    using GetNodeHandler = std::function<void(
+        zkutil::ZkErrorCode errcode, const ZkClientPtr& client,
+        const std::string& path, const std::string& value, int32_t version,
+        void* context)>;
 
 /* errcode 返回：
         kZKSucceed: 获取成功, childNode返回 所有子结点的 结点名，path 返回 分支路径
