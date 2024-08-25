@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 
 link_directories(${CMAKE_ARCHIVE_OUTPUT_DIRECTORY})
 
-file(GLOB_RECURSE ZK_TEST_SOURCES "${PROJECT_SOURCE_DIR}/test/*test.cc")
+file(GLOB_RECURSE ZK_TEST_SOURCES "${PROJECT_SOURCE_DIR}/test/*.cc")
 
 # "make all-tests"
 add_custom_target(show-tests COMMAND ${CMAKE_CTEST_COMMAND} --show-only)

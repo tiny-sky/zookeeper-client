@@ -762,8 +762,7 @@ zkutil::ZkErrorCode ZkClient::deleteRecursive(const std::string& path,
               << ", path:" << path << ", version:" << version
               << ", session Handle:" << handle_;
     return zkutil::kZKError;
-  } else  //zkutil::kZKSucceed
-  {
+  } else {
     //删除 child 结点
     std::vector<std::string>::iterator iter = childNodes.begin();
     for (; iter != childNodes.end(); iter++) {
