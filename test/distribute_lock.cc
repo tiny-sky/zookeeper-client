@@ -151,9 +151,8 @@ class DistriLock : boost::noncopyable {
                      const std::string& path, const std::string& value,
                      int32_t version, void* context) {
 
-    std::cout << "[regNodeWatcher_cancelRegNodeWatcher_test_cb] notifyType:"
-              << type << ", value:" << value << ", version:" << version
-              << std::endl;
+    std::cout << "[regWatcher_cb] notifyType:" << type << ", value:" << value
+              << ", version:" << version << std::endl;
     if (type == zkutil::kNodeDelete) {
       std::unique_lock<std::mutex> lock(mutex_);
       ready_ = true;
