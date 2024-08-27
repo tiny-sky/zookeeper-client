@@ -5,13 +5,8 @@
 #include "ZkUtil.h"
 
 #include <binders.h>
-#include <atomic>
-#include <condition_variable>
 #include <iostream>
-#include <mutex>
-#include <queue>
 #include <string>
-#include <thread>
 #include <vector>
 
 using namespace zkclient;
@@ -79,7 +74,7 @@ bool Master::init(const std::string& zkConnStr) {
 
   zkConnStr_ = zkConnStr;
   //设置zookeeper日志路径
-  if (ZkClientManager::setLogConf(true, "./zk_log") == false) {
+  if (ZkClientManager::setLogConf(true, "./zkMaster_log") == false) {
     std::cout << "setLogConf failed!" << std::endl;
     return false;
   }
@@ -98,7 +93,7 @@ bool Master::init(const std::string& zkConnStr) {
                         std::bind(&Master::create_parent_completion, this, _1,
                                   _2, _3, _4, _5),
                         nullptr, false, false) == false) {
-    std::cout << "[async_create_test_1] create path failed! path: /workers"
+    std::cout << "create path failed! path: /workers"
               << std::endl;
     return false;
   }
@@ -106,7 +101,7 @@ bool Master::init(const std::string& zkConnStr) {
                         std::bind(&Master::create_parent_completion, this, _1,
                                   _2, _3, _4, _5),
                         nullptr, false, false) == false) {
-    std::cout << "[async_create_test_1] create path failed! path: /assign"
+    std::cout << "create path failed! path: /assign"
               << std::endl;
     return false;
   }
@@ -114,7 +109,7 @@ bool Master::init(const std::string& zkConnStr) {
                         std::bind(&Master::create_parent_completion, this, _1,
                                   _2, _3, _4, _5),
                         nullptr, false, false) == false) {
-    std::cout << "[async_create_test_1] create path failed! path: /status"
+    std::cout << "create path failed! path: /status"
               << std::endl;
     return false;
   }
@@ -130,7 +125,7 @@ bool Master::run_for_master() {
                         std::bind(&Master::master_create_completion, this, _1,
                                   _2, _3, _4, _5),
                         nullptr, true, false) == false) {
-    std::cout << "[async_create] create path failed! path: /master"
+    std::cout << "create path failed! path: /master"
               << std::endl;
     return false;
   }

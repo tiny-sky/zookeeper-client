@@ -1,4 +1,5 @@
 #include "master.h"
+#include "worker.h"
 
 #include "iostream"
 
@@ -8,6 +9,8 @@
 
 int main() {
   Master master;
+  Worker worker1("worker1");
+  Worker worker2("worker2");
 
   if (!master.init(ZOOKEEPER_MASTER)) {
     std::cout << "Master init failed! " << std::endl;
@@ -15,5 +18,18 @@ int main() {
   }
 
   //Run for master
-  master.run_for_master();
+  if (!master.run_for_master()) {
+    std::cout << "run_for_master failer!" << std::endl;
+    return 0;
+  }
+
+  // Register for master
+  if (!worker1.Register()) {
+    std::cout << worker1.getname() << " failer!" << std::endl;
+    return 0;
+  }
+  if (!worker2.Register()) {
+    std::cout << worker2.getname() << " failer!" << std::endl;
+    return 0;
+  }
 }
