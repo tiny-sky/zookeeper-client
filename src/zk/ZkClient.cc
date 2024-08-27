@@ -478,6 +478,12 @@ void ZkClient::createCompletion(int rc, const char* value, const void* data) {
       watch_ctx->create_handler_(zkutil::kZKExisted, watch_ctx->zkclient_,
                                  watch_ctx->path_, "", watch_ctx->context_);
     }
+  } else if (rc == ZCONNECTIONLOSS) {
+    if (watch_ctx->create_handler_) {
+      watch_ctx->create_handler_(zkutil::kZKLostConnection,
+                                 watch_ctx->zkclient_, watch_ctx->path_, "",
+                                 watch_ctx->context_);
+    }
   } else {
     if (watch_ctx->create_handler_) {
       watch_ctx->create_handler_(zkutil::kZKError, watch_ctx->zkclient_,
@@ -866,6 +872,12 @@ void ZkClient::getNodeDataCompletion(int rc, const char* value, int value_len,
           zkutil::kZKNotExist, watch_ctx->zkclient_, watch_ctx->path_, strValue,
           zkutil::kInvalidDataVersion, watch_ctx->context_);
     }
+  } else if (rc == ZCONNECTIONLOSS) {
+    if (watch_ctx->getnode_handler_) {
+      watch_ctx->getnode_handler_(
+          zkutil::kZKLostConnection, watch_ctx->zkclient_, watch_ctx->path_,
+          strValue, zkutil::kInvalidDataVersion, watch_ctx->context_);
+    }
   } else {
     if (watch_ctx->getnode_handler_) {
       watch_ctx->getnode_handler_(
@@ -930,6 +942,13 @@ void ZkClient::getChildrenStringCompletion(int rc,
                                       watch_ctx->path_, childNodes,
                                       watch_ctx->context_);
     }
+  } else if (rc == ZCONNECTIONLOSS) {
+    if (watch_ctx->getchildren_handler_) {
+      std::vector<std::string> childNodes;
+      watch_ctx->getchildren_handler_(zkutil::kZKLostConnection,
+                                      watch_ctx->zkclient_, watch_ctx->path_,
+                                      childNodes, watch_ctx->context_);
+    }
   } else {
     if (watch_ctx->getchildren_handler_) {
       std::vector<std::string> childNodes;
@@ -981,6 +1000,11 @@ void ZkClient::existCompletion(int rc, const struct Stat* stat,
       watch_ctx->exist_handler_(
           rc == ZOK ? zkutil::kZKSucceed : zkutil::kZKNotExist,
           watch_ctx->zkclient_, watch_ctx->path_, watch_ctx->context_);
+    }
+  } else if (rc == ZCONNECTIONLOSS) {
+    if (watch_ctx->exist_handler_) {
+      watch_ctx->exist_handler_(zkutil::kZKLostConnection, watch_ctx->zkclient_,
+                                watch_ctx->path_, watch_ctx->context_);
     }
   } else {
     if (watch_ctx->exist_handler_) {
