@@ -1,7 +1,10 @@
-file(GLOB LOCK_SRC ${CMAKE_CURRENT_SOURCE_DIR}/zk/*.cc)
+file(GLOB ZK_SRC_ZK ${CMAKE_CURRENT_SOURCE_DIR}/zk/*.cc)
+file(GLOB ZK_SRC_RPC ${CMAKE_CURRENT_SOURCE_DIR}/rpc/*.cc)
 
-# add_library(lock STATIC ${LOCK_SRC})
-add_library(zk_object OBJECT ${LOCK_SRC})
+list(APPEND ZK_SRC ${ZK_SRC_ZK} ${ZK_SRC_RPC})
+
+# add_library(lock STATIC ${ZK_SRC})
+add_library(zk_object OBJECT ${ZK_SRC})
 add_library(zkclient STATIC $<TARGET_OBJECTS:zk_object>)
 
 message(STATUS "Static lib done")

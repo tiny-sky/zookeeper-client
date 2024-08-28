@@ -120,7 +120,6 @@ class DistriSharedLock : boost::noncopyable {
     if (childNodes.front() == retpath_) {
       return true;
     } else {
-      // Watch 前面一个节点
       // 获取前一个节点所处位置
       auto it = std::find(childNodes.begin(), childNodes.end(), retpath_);
       int index = std::distance(childNodes.begin(), it) - 1;
@@ -130,6 +129,7 @@ class DistriSharedLock : boost::noncopyable {
       if (IsAllReadLock(childNodes, index, lastWLock)) {
         return true;
       } else {
+        // Watch 前面一个节点
         std::string prenode =
             lastWLock.empty() ? childNodes.at(index) : lastWLock;
         std::string path = parentPath_ + '/' + prenode;
