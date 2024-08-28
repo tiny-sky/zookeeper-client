@@ -1,5 +1,9 @@
 #pragma once
 
+#include "ZkClient.h"
+#include "ZkClientManager.h"
+#include "ZkUtil.h"
+
 #include "muduo/net/TcpServer.h"
 #include "muduo/net/EventLoop.h"
 #include "muduo/net/InetAddress.h"
@@ -21,17 +25,25 @@ namespace zkclient {
 
 class RpcServer {
   public:
-  RpcServer(EventLoop* loop, const InetAddress& listenAddr);
+  RpcServer(EventLoop* loop, const InetAddress& listenAddr,const std::string& zkConnStr);
+
+  ~RpcServer();
 
   void setThreadNum(int numThreads) { server_.setThreadNum(numThreads); }
 
-  void registerService(::google::protobuf::Service*);
+  bool registerService(::google::protobuf::Service*,const std::string ip);
   void start();
 
   private:
   void onConnection(const TcpConnectionPtr& conn);
 
+  bool zkinit();
+
   TcpServer server_;
   std::map<std::string, ::google::protobuf::Service*> services_;
+
+  std::string zkConnStr_;
+  ZkClientPtr zkClient_;
+  const std::string parentPath_ = "/rpc";
 };
 }  // namespace zkclient
