@@ -22,7 +22,12 @@ using std::placeholders::_6;
 
 class DistriSharedLock : boost::noncopyable {
   public:
-  DistriSharedLock() : mutex_(), zkConnStr_(""), isInit_(false),ready_(false), childNodeName_("") {}
+  DistriSharedLock()
+      : mutex_(),
+        zkConnStr_(""),
+        isInit_(false),
+        ready_(false),
+        childNodeName_("") {}
 
   ~DistriSharedLock() {
     //删除结点
@@ -81,7 +86,71 @@ class DistriSharedLock : boost::noncopyable {
     return true;
   }
 
-  bool lock() {
+  bool Rlock() {
+    if (isInit_.load() == false) {
+      return false;
+    }
+
+    zkutil::ZkErrorCode ec;
+
+    std::string retPath;
+    std::vector<std::string> childNodes;
+
+    std::string Path = parentPath_ + "/" + childNodeName_ + "-R-";
+    if (zkClient_->create(Path, "", true, true, retPath) !=
+        zkutil::kZKSucceed) {
+      std::cout << "create [" << Path << "] failed!" << std::endl;
+      return false;
+    }
+
+    retpath_ = trimPath(retPath);
+
+    if (zkClient_->getChildren(parentPath_, childNodes) != zkutil::kZKSucceed) {
+      std::cout << "get [" << parentPath_ << "] failed!" << std::endl;
+      return false;
+    }
+
+    // 如果只剩下一个节点则获得锁成功
+    if (childNodes.size() == 1 && childNodes.front() == retpath_) {
+      return true;
+    }
+
+    // 排序判断是否是第一个节点
+    std::sort(childNodes.begin(), childNodes.end());
+    if (childNodes.front() == retpath_) {
+      return true;
+    } else {
+      // Watch 前面一个节点
+      // 获取前一个节点所处位置
+      auto it = std::find(childNodes.begin(), childNodes.end(), retpath_);
+      int index = std::distance(childNodes.begin(), it) - 1;
+      std::string lastWLock = "";
+
+      // 如果前面全是读请求
+      if (IsAllReadLock(childNodes, index, lastWLock)) {
+        return true;
+      } else {
+        std::string prenode =
+            lastWLock.empty() ? childNodes.at(index) : lastWLock;
+        std::string path = parentPath_ + '/' + prenode;
+        if (zkClient_->regNodeWatcher(
+                path,
+                std::bind(&DistriSharedLock::regWatcher_cb, this, _1, _2, _3,
+                          _4, _5, _6),
+                nullptr) == false) {
+          std::cout << "regWatcher failed! path:" << path << std::endl;
+          return false;
+        }
+      }
+    }
+
+    std::unique_lock<std::mutex> lock(mutex_);
+    condition_.wait(lock, [this]() { return ready_; });
+
+    return true;
+  }
+
+  bool Wlock() {
     if (isInit_.load() == false) {
       return false;
     }
@@ -121,8 +190,8 @@ class DistriSharedLock : boost::noncopyable {
 
       std::string path = parentPath_ + '/' + childNodes.at(index);
       if (zkClient_->regNodeWatcher(path,
-                                    std::bind(&DistriSharedLock::regWatcher_cb, this,
-                                              _1, _2, _3, _4, _5, _6),
+                                    std::bind(&DistriSharedLock::regWatcher_cb,
+                                              this, _1, _2, _3, _4, _5, _6),
                                     nullptr) == false) {
         std::cout << "regWatcher failed! path:" << path << std::endl;
         return false;
@@ -130,14 +199,21 @@ class DistriSharedLock : boost::noncopyable {
     }
 
     std::unique_lock<std::mutex> lock(mutex_);
-    condition_.wait(lock,[this](){
-      return ready_;
-    });
+    condition_.wait(lock, [this]() { return ready_; });
 
     return true;
   }
 
-  bool unlock() {
+  bool Runlock() {
+    //删除子结点
+    string path = parentPath_ + '/' + retpath_;
+    if (zkClient_->deleteNode(path) != zkutil::kZKSucceed) {
+      return false;
+    }
+    return true;
+  }
+
+  bool Wunlock() {
     //删除子结点
     string path = parentPath_ + '/' + retpath_;
     if (zkClient_->deleteNode(path) != zkutil::kZKSucceed) {
@@ -168,10 +244,35 @@ class DistriSharedLock : boost::noncopyable {
     return path;
   }
 
+  bool isReadLock(std::string& str) {
+    if (str.find("-R-") != std::string::npos) {
+      return true;
+    }
+    return false;
+  }
+
+  bool isWriteLock(std::string& str) {
+    if (str.find("-W-") != std::string::npos) {
+      return true;
+    }
+    return false;
+  }
+
+  bool IsAllReadLock(std::vector<std::string>& locks, int index,
+                     std::string& lastWLock) {
+    for (int i = index; i >= 0; i--) {
+      if (!isReadLock(locks[i])) {
+        lastWLock = locks[i];
+        return false;
+      }
+    }
+    return true;
+  }
+
   std::string zkConnStr_;
   ZkClientPtr zkClient_;
   std::atomic<bool> isInit_;
-  const std::string parentPath_ = "/exclusive_lock";
+  const std::string parentPath_ = "/shared_lock";
   std::string childNodeName_;
 
   std::string retpath_;
@@ -181,19 +282,54 @@ class DistriSharedLock : boost::noncopyable {
 };
 
 void distriLocktest_1(DistriSharedLock& d1) {
-  d1.lock();
+  d1.Wlock();
   std::cout << "Get distriLock1 lock" << std::endl;
   std::this_thread::sleep_for(std::chrono::seconds(5));
   std::cout << "unlock distriLock1" << std::endl;
-  d1.unlock();
+  d1.Wunlock();
 }
 
 void distriLocktest_2(DistriSharedLock& d2) {
-  d2.lock();
+  d2.Wlock();
   std::cout << "Get distriLock2 lock" << std::endl;
   std::this_thread::sleep_for(std::chrono::seconds(5));
   std::cout << "unlock distriLock2" << std::endl;
-  d2.unlock();
+  d2.Wunlock();
+}
+
+void distriLocktest_read_1(DistriSharedLock& d1) {
+  d1.Rlock();
+  std::cout << "Get distriLock_read_1 lock" << std::endl;
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+  std::cout << "unlock distriLock_read_1" << std::endl;
+  d1.Runlock();
+}
+void distriLocktest_read_2(DistriSharedLock& d2) {
+  d2.Rlock();
+  std::cout << "Get distriLock_read_1 lock" << std::endl;
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+  std::cout << "unlock distriLock_read_1" << std::endl;
+  d2.Runlock();
+}
+
+void distrilock_test(DistriSharedLock& d1, DistriSharedLock& d2) {
+  std::thread t1(distriLocktest_1, std::ref(d1));
+  std::thread t2(distriLocktest_2, std::ref(d2));
+
+  t1.join();
+  t2.join();
+
+  std::cout << "distrilock_read_ test ok!" << std::endl;
+}
+
+void distrilock_read_test(DistriSharedLock& d1, DistriSharedLock& d2) {
+  std::thread t1(distriLocktest_read_1, std::ref(d1));
+  std::thread t2(distriLocktest_read_2, std::ref(d2));
+
+  t1.join();
+  t2.join();
+
+  std::cout << "distrilock test ok!" << std::endl;
 }
 
 int main() {
@@ -210,13 +346,9 @@ int main() {
     return 0;
   }
 
-  std::thread t1(distriLocktest_1, std::ref(d1));
-  std::thread t2(distriLocktest_2, std::ref(d2));
+  distrilock_test(d1, d2);
 
-  t1.join();
-  t2.join();
-
-  std::cout << "distrilock test ok!" << std::endl;
+  distrilock_read_test(d1, d2);
 
   return 0;
 }
