@@ -26,12 +26,12 @@ std::string WorkCode2string(WorkerCode code) {
   }
 }
 
-Worker::Worker(std::string name) : zkConnStr_(""), name_(name) {}
+Worker::Worker(std::string ip) : zkConnStr_(""), ip_(ip) {}
 
 Worker::~Worker() {
 
-  zkClient_->deleteNode("/workers/" + name_);
-  zkClient_->deleteNode("/assign/" + name_);
+  zkClient_->deleteNode("/workers/" + ip_);
+  zkClient_->deleteNode("/assign/" + ip_);
 
   //释放zookeeper handle
   ZkClientManager::instance().destroyClient(zkClient_->getHandle());
@@ -64,10 +64,9 @@ bool Worker::init(const std::string& zkConnStr) {
 
 bool Worker::Register() {
   // 向Master注册
-  std::string path = "/workers/" + name_;
-  std::string value = path + ":2182";
+  std::string path = "/workers/" + ip_;
   if (zkClient_->create(
-          path, value,
+          path, "0",
           std::bind(&Worker::register_completion, this, _1, _2, _3, _4, _5),
           nullptr, true, false) == false) {
     std::cout << "create path failed! path: " << path << std::endl;
@@ -75,7 +74,7 @@ bool Worker::Register() {
   }
 
   // 创建任务接受路径，并监视
-  path = "/assign/" + name_;
+  path = "/assign/" + ip_;
   if (zkClient_->create(
           path, "",
           std::bind(&Worker::register_completion, this, _1, _2, _3, _4, _5),

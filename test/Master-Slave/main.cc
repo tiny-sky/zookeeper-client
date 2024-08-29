@@ -9,8 +9,8 @@
 
 int main() {
   Master master;
-  Worker worker1("worker1");
-  Worker worker2("worker2");
+  Worker worker1("127.0.0.1:8081");
+  Worker worker2("127.0.0.1:8082");
   Client client;
 
   if (!master.init(ZOOKEEPER_SERVER_CONN_STRING)) {
@@ -38,11 +38,11 @@ int main() {
 
   // Register for master
   if (!worker1.Register()) {
-    std::cout << worker1.getname() << " failer!" << std::endl;
+    std::cout << worker1.getip() << " failer!" << std::endl;
     return 0;
   }
   if (!worker2.Register()) {
-    std::cout << worker2.getname() << " failer!" << std::endl;
+    std::cout << worker2.getip() << " failer!" << std::endl;
     return 0;
   }
 

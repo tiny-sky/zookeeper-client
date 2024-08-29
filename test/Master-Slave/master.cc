@@ -6,6 +6,7 @@
 
 #include <binders.h>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -93,24 +94,21 @@ bool Master::init(const std::string& zkConnStr) {
                         std::bind(&Master::create_parent_completion, this, _1,
                                   _2, _3, _4, _5),
                         nullptr, false, false) == false) {
-    std::cout << "create path failed! path: /workers"
-              << std::endl;
+    std::cout << "create path failed! path: /workers" << std::endl;
     return false;
   }
   if (zkClient_->create("/assign", "",
                         std::bind(&Master::create_parent_completion, this, _1,
                                   _2, _3, _4, _5),
                         nullptr, false, false) == false) {
-    std::cout << "create path failed! path: /assign"
-              << std::endl;
+    std::cout << "create path failed! path: /assign" << std::endl;
     return false;
   }
   if (zkClient_->create("/status", "",
                         std::bind(&Master::create_parent_completion, this, _1,
                                   _2, _3, _4, _5),
                         nullptr, false, false) == false) {
-    std::cout << "create path failed! path: /status"
-              << std::endl;
+    std::cout << "create path failed! path: /status" << std::endl;
     return false;
   }
 
@@ -125,8 +123,7 @@ bool Master::run_for_master() {
                         std::bind(&Master::master_create_completion, this, _1,
                                   _2, _3, _4, _5),
                         nullptr, true, false) == false) {
-    std::cout << "create path failed! path: /master"
-              << std::endl;
+    std::cout << "create path failed! path: /master" << std::endl;
     return false;
   }
 }
@@ -285,6 +282,9 @@ void Master::task_assignment_completion(zkutil::ZkErrorCode errcode,
         std::cout << "Deleting pending task :" << task->name << std::endl;
         std::string del_path = "/tasks/" + task->name;
         zkClient_->deleteNode(del_path);
+
+        std::string path = "/workers/" + task->worker;
+        sub_worker_load(path);
       }
 
       break;
@@ -312,7 +312,7 @@ void Master::get_task_data_completion(zkutil::ZkErrorCode errcode,
       std::cout << "Choosing worker for task : " << task << std::endl;
       if (!workers.empty()) {
         // Choose worker
-        int worker_index = rand() % workers.size();
+        int worker_index = chooseworker();
         std::cout << "chose worker :" << worker_index << std::endl;
 
         // Assign task to worker
@@ -325,6 +325,31 @@ void Master::get_task_data_completion(zkutil::ZkErrorCode errcode,
                 << std::endl;
       break;
   }
+}
+
+int Master::chooseworker() {
+  int workerindex = 0;
+  int maxnumber = std::numeric_limits<int>::max();
+
+  for (int i = 0; i < workers.size(); i++) {
+    std::string path = "/workers/" + workers[i];
+    std::string value = "";
+    int32_t version;
+    if (zkClient_->getNode(path, value, version) != zkutil::kZKSucceed) {
+      continue;
+    }
+
+    int number = std::stoi(value);
+    if (number > maxnumber) {
+      workerindex = i;
+      maxnumber = number;
+    }
+  }
+
+  std::string path = "/workers/" + workers[workerindex];
+  std::string value = std::to_string(maxnumber + 1);
+  zkClient_->set(path, value);
+  return workerindex;
 }
 
 void Master::tasks_completion(zkutil::ZkErrorCode errcode,
@@ -431,4 +456,16 @@ void Master::assign_tasks(std::vector<std::string>& strings) {
     std::cout << "Assigning task :" << data << std::endl;
     get_task_data(data);
   }
+}
+
+void Master::sub_worker_load(std::string path) {
+  std::string value = "";
+  int32_t version;
+
+  if (zkClient_->getNode(path, value, version) != zkutil::kZKSucceed) {
+    return;
+  }
+
+  std::string load = std::to_string(std::stoi(value) - 1);
+  zkClient_->set(path, load);
 }

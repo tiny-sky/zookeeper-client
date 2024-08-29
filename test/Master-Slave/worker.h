@@ -32,7 +32,7 @@ class Worker : boost::noncopyable {
 
   bool Register();
 
-  std::string getname() { return name_; }
+  std::string getip() { return ip_; }
 
   private:
   void register_completion(zkutil::ZkErrorCode errcode,
@@ -46,7 +46,7 @@ class Worker : boost::noncopyable {
   void task_watcher(zkutil::ZkNotifyType type, const ZkClientPtr& client,
                     const std::string& path,
                     const std::vector<std::string>& childNodes, void* context);
-  std::string name_;
+  std::string ip_;
   std::string zkConnStr_;
   ZkClientPtr zkClient_;
 };

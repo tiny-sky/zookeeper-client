@@ -48,8 +48,19 @@ class Master : boost::noncopyable {
   void get_workers();
   void get_tasks();
 
+  // 基于最小连接数的负载均衡
+  int chooseworker();
+
   void get_task_data(std::string& task);
   void task_assignment(task_info* task);
+
+  /*
+ * This function returns the elements that are new in current
+ * compared to previous and update previous.
+ */
+  std::vector<std::string> added_and_set(
+      const std::vector<std::string>& current,
+      std::vector<std::string>& previous);
 
   /**
  *
@@ -120,15 +131,9 @@ class Master : boost::noncopyable {
                              void* context);
 
   void set_workers(const std::vector<std::string>& current,
-                       std::vector<std::string>& previous);
+                   std::vector<std::string>& previous);
 
-  /*
- * This function returns the elements that are new in current
- * compared to previous and update previous.
- */
-  std::vector<std::string> added_and_set(
-      const std::vector<std::string>& current,
-      std::vector<std::string>& previous);
+  void sub_worker_load(std::string path);
 
   std::string zkConnStr_;
   ZkClientPtr zkClient_;
@@ -137,4 +142,3 @@ class Master : boost::noncopyable {
   std::vector<std::string> workers;
   std::vector<std::string> tasks;
 };
-
