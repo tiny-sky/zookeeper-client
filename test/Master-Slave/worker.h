@@ -34,6 +34,8 @@ class Worker : boost::noncopyable {
 
   std::string getip() { return ip_; }
 
+  bool getconfig();
+
   private:
   void register_completion(zkutil::ZkErrorCode errcode,
                            const ZkClientPtr& client, const std::string& path,
@@ -46,7 +48,12 @@ class Worker : boost::noncopyable {
   void task_watcher(zkutil::ZkNotifyType type, const ZkClientPtr& client,
                     const std::string& path,
                     const std::vector<std::string>& childNodes, void* context);
+
+  void config_watcher(zkutil::ZkNotifyType type, const ZkClientPtr& client,
+                      const std::string& path, const std::string& value,
+                      int32_t version, void* context);
   std::string ip_;
   std::string zkConnStr_;
   ZkClientPtr zkClient_;
+  std::string configpath_ = "/config/db_config";
 };

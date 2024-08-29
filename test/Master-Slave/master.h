@@ -54,6 +54,8 @@ class Master : boost::noncopyable {
   void get_task_data(std::string& task);
   void task_assignment(task_info* task);
 
+  bool init_config();
+
   /*
  * This function returns the elements that are new in current
  * compared to previous and update previous.

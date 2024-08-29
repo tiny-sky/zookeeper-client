@@ -10,7 +10,11 @@
 #include <string>
 #include <vector>
 
+#include <fstream>
+#include <nlohmann/json.hpp>
+
 using namespace zkclient;
+using json = nlohmann::json;
 
 using std::placeholders::_4;
 using std::placeholders::_5;
@@ -109,6 +113,26 @@ bool Master::init(const std::string& zkConnStr) {
                                   _2, _3, _4, _5),
                         nullptr, false, false) == false) {
     std::cout << "create path failed! path: /status" << std::endl;
+    return false;
+  }
+
+  if (!init_config()) {
+    std::cout << "db_congfig.json init failed!" << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
+bool Master::init_config() {
+  std::ifstream file("db_config.json");
+  json config = json::parse(file);
+  std::string s = config.dump();
+  std::string retPath;
+
+  zkutil::ZkErrorCode ec =
+      zkClient_->create("/config/db_config", s, false, false, retPath);
+  if (ec != zkutil::kZKSucceed && ec != zkutil::kZKExisted) {
     return false;
   }
 

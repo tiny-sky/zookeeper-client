@@ -9,7 +9,11 @@
 #include <string>
 #include <vector>
 
+#include <fstream>
+#include <nlohmann/json.hpp>
+
 using namespace zkclient;
+using json = nlohmann::json;
 
 using std::placeholders::_4;
 using std::placeholders::_5;
@@ -59,6 +63,11 @@ bool Worker::init(const std::string& zkConnStr) {
   //通过session handle，获取ZkClient
   zkClient_ = ZkClientManager::instance().getZkClient(handle);
 
+  if (!getconfig()) {
+    std::cout << "Get db_config failed!" << std::endl;
+    return false;
+  }
+
   return true;
 }
 
@@ -86,7 +95,16 @@ bool Worker::Register() {
   if (zkClient_->regChildWatcher(
           path, std::bind(&Worker::task_watcher, this, _1, _2, _3, _4, _5),
           nullptr) == false) {
-    std::cout << "Watcher failed! path: " << path << std::endl;
+    std::cout << "Child watcher failed! path: " << path << std::endl;
+    return false;
+  }
+
+  // Watch db_config.json
+  if (zkClient_->regNodeWatcher(
+          configpath_,
+          std::bind(&Worker::config_watcher, this, _1, _2, _3, _4, _5, _6),
+          nullptr)) {
+    std::cout << "Config watcher failed! path: " << path << std::endl;
     return false;
   }
 }
@@ -137,4 +155,42 @@ void Worker::register_completion(zkutil::ZkErrorCode errcode,
     default:
       std::cout << "Something went wrong when running for master" << std::endl;
   }
+}
+
+void Worker::config_watcher(zkutil::ZkNotifyType type,
+                            const ZkClientPtr& client, const std::string& path,
+                            const std::string& value, int32_t version,
+                            void* context) {
+  // config 发生改变应该更新重新获取
+  json config = json::parse(value);
+
+  std::ofstream file("worker_db_config.json");
+
+  if (!file.is_open()) {
+    std::cout << "update db_config failed!" << std::endl;
+    return ;
+  }
+
+  file << config.dump(4);
+  file.close();
+}
+
+bool Worker::getconfig() {
+  std::string value = "";
+  int32_t version;
+  if(zkClient_->getNode(configpath_,value,version) != zkutil::kZKSucceed) {
+    return false;
+  }
+
+  json config = json::parse(value);
+
+  std::ofstream file("worker_db_config.json");
+
+  if (!file.is_open()) {
+    std::cout << "Get db_config failed!" << std::endl;
+    return false;
+  }
+
+  file << config.dump(4);
+  file.close();
 }
