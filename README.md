@@ -40,4 +40,16 @@ make distribute_lock
 
 基于 zookeeper-client 框架实现了 zookeeper [常见使用场景](./example/README.md)
 
+#### 基础模块
+- [分布式独占锁](./example/README.md#分布式排他锁)
+- [分布式共享锁](./example/README.md#分布式共享锁)
+- [分布式屏障](./example/README.md#分布式-barrier)
 
+#### RPC 模块
+- [RPC](./example/README.md#rpc-模块)
+
+#### 主从任务调度
+- [master-slave](./example/README.md#master-slave)
+
+### LICENSE
+本项目所有代码使用 [Apache 2.0](./LICENSE) 进行许可。
